@@ -1,0 +1,39 @@
+name: build-release
+on:
+  push:
+    tags:
+      - "v*.*.*"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y jq zip
+      - name: Verify manifest version matches tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          MANIFEST_VERSION=$(jq -r '.version' custom_components/canvas_student/manifest.json)
+          echo "manifest=${MANIFEST_VERSION}" >> $GITHUB_OUTPUT
+          if [ "${MANIFEST_VERSION}" != "${TAG#v}" ]; then
+            echo "Manifest version (${MANIFEST_VERSION}) does not match tag (${TAG})"
+            exit 1
+          fi
+      - name: Build integration zip
+        run: |
+          cd custom_components
+          zip -r ../canvas_student_${{ steps.version.outputs.tag }}.zip canvas_student
+      - name: Build examples zip
+        run: zip -r examples_cards_${{ steps.version.outputs.tag }}.zip examples/cards || true
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          files: |
+            canvas_student_${{ steps.version.outputs.tag }}.zip
+            examples_cards_${{ steps.version.outputs.tag }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
