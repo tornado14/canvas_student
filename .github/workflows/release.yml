@@ -1,4 +1,6 @@
 name: build-release
+permissions:
+  contents: write
 on:
   push:
     tags:
@@ -20,7 +22,7 @@ jobs:
           if [ "${MANIFEST_VERSION}" != "${TAG#v}" ]; then
             echo "Manifest version (${MANIFEST_VERSION}) does not match tag (${TAG})"
             exit 1
-          fi
+          }
       - name: Build integration zip
         run: |
           cd custom_components

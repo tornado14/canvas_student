@@ -1,7 +1,7 @@
 {
   "domain": "canvas_student",
   "name": "Canvas (Student)",
-  "version": "0.6.10",
+  "version": "0.6.11",
   "documentation": "https://github.com/tornado14/canvas_student",
   "iot_class": "cloud_polling",
   "codeowners": [

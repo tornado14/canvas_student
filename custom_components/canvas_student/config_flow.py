@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Any, Dict
+import json
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
@@ -9,6 +10,7 @@ from .const import (
     DOMAIN, CONF_BASE_URL, CONF_ACCESS_TOKEN, CONF_SCHOOL_NAME, CONF_STUDENT_NAME,
     OPT_HIDE_EMPTY, OPT_DAYS_AHEAD, OPT_ANN_DAYS, OPT_MISS_LOOKBACK, OPT_UPDATE_MINUTES,
     DEFAULT_HIDE_EMPTY, DEFAULT_DAYS_AHEAD, DEFAULT_ANNOUNCEMENT_DAYS, DEFAULT_MISSING_LOOKBACK, DEFAULT_UPDATE_MINUTES,
+    OPT_ENABLE_GPA, OPT_GPA_SCALE, OPT_CREDITS_MAP, DEFAULT_ENABLE_GPA, DEFAULT_GPA_SCALE,
 )
 from .simple_client import CanvasClient
 ACTION = "action"; ACT_VALIDATE = "validate"; ACT_SAVE = "save"
@@ -53,6 +55,14 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
         ann_default = int(cur.get(OPT_ANN_DAYS, DEFAULT_ANNOUNCEMENT_DAYS))
         miss_default = int(cur.get(OPT_MISS_LOOKBACK, DEFAULT_MISSING_LOOKBACK))
         upd_default = int(cur.get(OPT_UPDATE_MINUTES, DEFAULT_UPDATE_MINUTES))
+        enable_gpa_default = bool(cur.get(OPT_ENABLE_GPA, DEFAULT_ENABLE_GPA))
+        gpa_scale_default = cur.get(OPT_GPA_SCALE, DEFAULT_GPA_SCALE)
+        credits_default_raw = cur.get(OPT_CREDITS_MAP, {})
+
+        if isinstance(credits_default_raw, dict):
+            credits_default_text = json.dumps(credits_default_raw, indent=2)
+        else:
+            credits_default_text = str(credits_default_raw or "{}")
 
         def build_schema(dd: Dict[str, Any]):
             return vol.Schema({
@@ -61,6 +71,9 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
                 vol.Optional(OPT_ANN_DAYS, default=dd.get(OPT_ANN_DAYS, ann_default)): int,
                 vol.Optional(OPT_MISS_LOOKBACK, default=dd.get(OPT_MISS_LOOKBACK, miss_default)): int,
                 vol.Optional(OPT_UPDATE_MINUTES, default=dd.get(OPT_UPDATE_MINUTES, upd_default)): int,
+                vol.Optional(OPT_ENABLE_GPA, default=dd.get(OPT_ENABLE_GPA, enable_gpa_default)): bool,
+                vol.Optional(OPT_GPA_SCALE, default=dd.get(OPT_GPA_SCALE, gpa_scale_default)): vol.In(["us_4_0_plusminus","simple_cutoffs"]),
+                vol.Optional(OPT_CREDITS_MAP, default=dd.get(OPT_CREDITS_MAP, credits_default_text)): str,
                 vol.Optional(CONF_ACCESS_TOKEN, default=dd.get(CONF_ACCESS_TOKEN, "")): str,
                 vol.Required("action", default=dd.get("action", ACT_SAVE)): vol.In([ACT_SAVE, ACT_VALIDATE]),
             })
@@ -74,6 +87,21 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
                     user_input[k] = int(user_input.get(k, cur.get(k)))
                 except Exception:
                     errors["base"] = "invalid_number"
+
+            credits_raw = user_input.get(OPT_CREDITS_MAP, "").strip() or "{}"
+            try:
+                credits_obj = json.loads(credits_raw)
+                if not isinstance(credits_obj, dict):
+                    raise ValueError("credits_by_course must be a JSON object")
+                credits_norm = {str(k): float(v) for (k, v) in credits_obj.items()}
+            except Exception:
+                errors[OPT_CREDITS_MAP] = "invalid_json"
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=build_schema(user_input),
+                    errors=errors,
+                    description_placeholders={"last_result": self._last_result},
+                )
 
             if action == ACT_VALIDATE:
                 if not token:
@@ -102,6 +130,9 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
                 OPT_ANN_DAYS: user_input.get(OPT_ANN_DAYS, ann_default),
                 OPT_MISS_LOOKBACK: user_input.get(OPT_MISS_LOOKBACK, miss_default),
                 OPT_UPDATE_MINUTES: user_input.get(OPT_UPDATE_MINUTES, upd_default),
+                OPT_ENABLE_GPA: bool(user_input.get(OPT_ENABLE_GPA, enable_gpa_default)),
+                OPT_GPA_SCALE: user_input.get(OPT_GPA_SCALE, gpa_scale_default),
+                OPT_CREDITS_MAP: credits_norm,
             })
             if token:
                 new_data = dict(self.config_entry.data)
