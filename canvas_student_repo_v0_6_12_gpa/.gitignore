@@ -1,7 +1,0 @@
-.DS_Store
-__pycache__/
-*.pyc
-.mypy_cache/
-.pytest_cache/
-.storage/
-home-assistant_v2.db*

@@ -1,18 +1,14 @@
-from __future__ import annotations
 
-import logging
+from __future__ import annotations
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.typing import ConfigType
 from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryNotReady
-
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.typing import ConfigType
 from .const import DOMAIN
 from .coordinator import CanvasCoordinator
 from .simple_client import CanvasClient
-
-_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR]
 

@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 from typing import Any, Dict
 import json
@@ -6,18 +7,12 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from .const import (
-    DOMAIN, CONF_BASE_URL, CONF_ACCESS_TOKEN, CONF_SCHOOL_NAME, CONF_STUDENT_NAME,
-    OPT_HIDE_EMPTY, OPT_DAYS_AHEAD, OPT_ANN_DAYS, OPT_MISS_LOOKBACK, OPT_UPDATE_MINUTES,
-    DEFAULT_HIDE_EMPTY, DEFAULT_DAYS_AHEAD, DEFAULT_ANNOUNCEMENT_DAYS, DEFAULT_MISSING_LOOKBACK, DEFAULT_UPDATE_MINUTES,
-    OPT_ENABLE_GPA, OPT_GPA_SCALE, OPT_CREDITS_MAP, DEFAULT_ENABLE_GPA, DEFAULT_GPA_SCALE,
-)
+from .const import *
 from .simple_client import CanvasClient
 ACTION = "action"; ACT_VALIDATE = "validate"; ACT_SAVE = "save"
 
 class CanvasStudentConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
-
     async def async_step_user(self, user_input: Dict[str, Any] | None = None) -> FlowResult:
         if user_input is not None:
             base_url = user_input[CONF_BASE_URL].rstrip("/")
@@ -28,13 +23,12 @@ class CanvasStudentConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_BASE_URL: base_url, CONF_ACCESS_TOKEN: token,
                 CONF_SCHOOL_NAME: school, CONF_STUDENT_NAME: user_input.get(CONF_STUDENT_NAME, ""),
             })
-        schema = vol.Schema({
+        return self.async_show_form(step_id="user", data_schema=vol.Schema({
             vol.Required(CONF_BASE_URL): str,
             vol.Required(CONF_ACCESS_TOKEN): str,
             vol.Required(CONF_SCHOOL_NAME): str,
             vol.Optional(CONF_STUDENT_NAME): str,
-        })
-        return self.async_show_form(step_id="user", data_schema=schema, errors={})
+        }), errors={})
 
     @staticmethod
     @callback
@@ -59,12 +53,9 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
         gpa_scale_default = cur.get(OPT_GPA_SCALE, DEFAULT_GPA_SCALE)
         credits_default_raw = cur.get(OPT_CREDITS_MAP, {})
 
-        if isinstance(credits_default_raw, dict):
-            credits_default_text = json.dumps(credits_default_raw, indent=2)
-        else:
-            credits_default_text = str(credits_default_raw or "{}")
+        credits_default_text = json.dumps(credits_default_raw, indent=2) if isinstance(credits_default_raw, dict) else str(credits_default_raw or "{}")
 
-        def build_schema(dd: Dict[str, Any]):
+        def schema(dd):
             return vol.Schema({
                 vol.Optional(OPT_HIDE_EMPTY, default=dd.get(OPT_HIDE_EMPTY, hide_default)): bool,
                 vol.Optional(OPT_DAYS_AHEAD, default=dd.get(OPT_DAYS_AHEAD, days_default)): int,
@@ -75,40 +66,37 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
                 vol.Optional(OPT_GPA_SCALE, default=dd.get(OPT_GPA_SCALE, gpa_scale_default)): vol.In(["us_4_0_plusminus","simple_cutoffs"]),
                 vol.Optional(OPT_CREDITS_MAP, default=dd.get(OPT_CREDITS_MAP, credits_default_text)): str,
                 vol.Optional(CONF_ACCESS_TOKEN, default=dd.get(CONF_ACCESS_TOKEN, "")): str,
-                vol.Required("action", default=dd.get("action", ACT_SAVE)): vol.In([ACT_SAVE, ACT_VALIDATE]),
+                vol.Required(ACTION, default=dd.get(ACTION, ACT_SAVE)): vol.In([ACT_SAVE, ACT_VALIDATE]),
             })
 
         if user_input is not None:
-            action = user_input.get("action")
+            action = user_input.get(ACTION)
             token = (user_input.get(CONF_ACCESS_TOKEN) or "").strip()
 
+            # ints
             for k in (OPT_DAYS_AHEAD, OPT_ANN_DAYS, OPT_MISS_LOOKBACK, OPT_UPDATE_MINUTES):
                 try:
                     user_input[k] = int(user_input.get(k, cur.get(k)))
                 except Exception:
                     errors["base"] = "invalid_number"
 
+            # parse credits
             credits_raw = user_input.get(OPT_CREDITS_MAP, "").strip() or "{}"
             try:
-                credits_obj = json.loads(credits_raw)
-                if not isinstance(credits_obj, dict):
-                    raise ValueError("credits_by_course must be a JSON object")
-                credits_norm = {str(k): float(v) for (k, v) in credits_obj.items()}
+                obj = json.loads(credits_raw)
+                if not isinstance(obj, dict):
+                    raise ValueError
+                credits_norm = {str(k): float(v) for (k, v) in obj.items()}
             except Exception:
                 errors[OPT_CREDITS_MAP] = "invalid_json"
-                return self.async_show_form(
-                    step_id="init",
-                    data_schema=build_schema(user_input),
-                    errors=errors,
-                    description_placeholders={"last_result": self._last_result},
-                )
+                return self.async_show_form(step_id="init", data_schema=schema(user_input), errors=errors, description_placeholders={"last_result": self._last_result})
 
             if action == ACT_VALIDATE:
                 if not token:
                     errors[CONF_ACCESS_TOKEN] = "required"
                 else:
-                    session = async_get_clientsession(self.hass)
-                    client = CanvasClient(self.config_entry.data.get(CONF_BASE_URL), token, session=session)
+                    sess = async_get_clientsession(self.hass)
+                    client = CanvasClient(self.config_entry.data.get(CONF_BASE_URL), token, session=sess)
                     try:
                         me = await client.get_users_self()
                         name = me.get("name") or me.get("short_name") or "unknown"
@@ -116,12 +104,7 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
                         self._last_result = f"✅ Valid — {name} ({uid})"
                     except Exception as ex:
                         self._last_result = f"❌ Invalid — {ex}"
-                return self.async_show_form(
-                    step_id="init",
-                    data_schema=build_schema(user_input),
-                    errors=errors,
-                    description_placeholders={"last_result": self._last_result},
-                )
+                return self.async_show_form(step_id="init", data_schema=schema(user_input), errors=errors, description_placeholders={"last_result": self._last_result})
 
             new_opts = dict(cur)
             new_opts.update({
@@ -140,9 +123,4 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
                 self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
             return self.async_create_entry(title="", data=new_opts)
 
-        return self.async_show_form(
-            step_id="init",
-            data_schema=build_schema({}),
-            errors=errors,
-            description_placeholders={"last_result": self._last_result},
-        )
+        return self.async_show_form(step_id="init", data_schema=schema({}), errors=errors, description_placeholders={"last_result": self._last_result})
