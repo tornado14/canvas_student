@@ -7,7 +7,23 @@
 ![HACS Custom](https://img.shields.io/badge/HACS-Custom-blue.svg)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Integration-03A9F4)
 
-Student-focused Canvas integration for Home Assistant: courses, grades, upcoming assignments, missing work, and announcements.  
-Multi-school support, per-school options, token validation, and drop-in Markdown cards that auto-discover schools.
+Student-focused Canvas integration: courses, grades, upcoming assignments, missing work, announcements, and **GPA per school** (based on per-course **credits** + current grades).
 
-See examples in `examples/cards/` and the integration in `custom_components/canvas_student/`.
+See `examples/cards/` for auto-discovery Markdown cards (Assignments, Missing, Announcements) with local-time formatting and grade links.  
+See `custom_components/canvas_student/` for the integration code.
+
+## GPA Setup
+In **Configure**:
+- Enable **GPA**.
+- Optional **GPA scale** (default: US 4.0 with +/-).
+- Paste **credits_by_course** JSON (Canvas course_id → credits). Example:
+```json
+{
+  "176": 3,
+  "35220": 3,
+  "35223": 4
+}
+```
+The **Info** sensor exposes `gpa`, `credits_by_course`, and `grade_points_by_course` for debugging.
+
+MIT © 2025 tornado14

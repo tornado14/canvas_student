@@ -17,10 +17,46 @@ from .const import (
     OPT_ANN_DAYS,
     OPT_MISS_LOOKBACK,
     OPT_UPDATE_MINUTES,
+    OPT_ENABLE_GPA,
+    OPT_GPA_SCALE,
+    OPT_CREDITS_MAP,
+    DEFAULT_ENABLE_GPA,
+    DEFAULT_GPA_SCALE,
 )
 from .simple_client import CanvasClient, CanvasApiError
 
 _LOGGER = logging.getLogger(__name__)
+
+def _letter_from_score(score: float) -> str | None:
+    if score is None:
+        return None
+    s = float(score)
+    if s >= 93: return "A"
+    if s >= 90: return "A-"
+    if s >= 87: return "B+"
+    if s >= 83: return "B"
+    if s >= 80: return "B-"
+    if s >= 77: return "C+"
+    if s >= 73: return "C"
+    if s >= 70: return "C-"
+    if s >= 67: return "D+"
+    if s >= 63: return "D"
+    if s >= 60: return "D-"
+    return "F"
+
+def _points_from_letter(letter: str | None, scale: str) -> float | None:
+    if not letter:
+        return None
+    plus_minus = {
+        "A":4.0,"A-":3.7,"B+":3.3,"B":3.0,"B-":2.7,
+        "C+":2.3,"C":2.0,"C-":1.7,"D+":1.3,"D":1.0,"D-":0.7,"F":0.0
+    }
+    simple = {"A":4.0,"B":3.0,"C":2.0,"D":1.0,"F":0.0}
+    letter = letter.strip().upper()
+    if scale == "simple_cutoffs":
+        base = letter[0] if letter and letter[0] in "ABCD" else "F"
+        return simple.get(base, 0.0)
+    return plus_minus.get(letter)
 
 class CanvasCoordinator(DataUpdateCoordinator):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, client: CanvasClient) -> None:
@@ -45,6 +81,11 @@ class CanvasCoordinator(DataUpdateCoordinator):
             days_ahead = int(self.entry.options.get(OPT_DAYS_AHEAD, DEFAULT_DAYS_AHEAD))
             ann_days = int(self.entry.options.get(OPT_ANN_DAYS, DEFAULT_ANNOUNCEMENT_DAYS))
             miss_look = int(self.entry.options.get(OPT_MISS_LOOKBACK, DEFAULT_MISSING_LOOKBACK))
+
+            enable_gpa = bool(self.entry.options.get(OPT_ENABLE_GPA, DEFAULT_ENABLE_GPA))
+            gpa_scale = self.entry.options.get(OPT_GPA_SCALE, DEFAULT_GPA_SCALE)
+            credits_map = self.entry.options.get(OPT_CREDITS_MAP, {}) or {}
+            credits_map = {str(k): float(v) for (k, v) in credits_map.items() if v is not None}
 
             now = datetime.now(timezone.utc)
             horizon = now + timedelta(days=days_ahead)
@@ -127,6 +168,29 @@ class CanvasCoordinator(DataUpdateCoordinator):
                         "posted_at": a.get("posted_at"),
                     })
 
+            grade_points_by_course = {}
+            if enable_gpa:
+                for cid, g in grades_by_course.items():
+                    letter = g.get("current_grade")
+                    score = g.get("current_score")
+                    if not letter and score is not None:
+                        letter = _letter_from_score(score)
+                    pts = _points_from_letter(letter, gpa_scale) if letter else None
+                    if pts is not None:
+                        grade_points_by_course[cid] = pts
+
+            gpa = None
+            gpa_quality_points = 0.0
+            gpa_credits = 0.0
+            if enable_gpa and grade_points_by_course:
+                for cid, pts in grade_points_by_course.items():
+                    cr = float(credits_map.get(cid, 0) or 0)
+                    if cr > 0:
+                        gpa_quality_points += pts * cr
+                        gpa_credits += cr
+                if gpa_credits > 0:
+                    gpa = gpa_quality_points / gpa_credits
+
             self.data = {
                 "base_url": base_url,
                 "school_name": school,
@@ -138,11 +202,18 @@ class CanvasCoordinator(DataUpdateCoordinator):
                 "announcements": announcements,
                 "courses_total": len(courses),
                 "grades_total": len(grades_by_course),
+                "credits_by_course": credits_map,
+                "grade_points_by_course": grade_points_by_course,
+                "gpa": gpa,
+                "gpa_credits": gpa_credits,
+                "gpa_quality_points": gpa_quality_points,
                 "options_applied": {
                     "days_ahead": days_ahead,
                     "announcement_days": ann_days,
                     "missing_lookback": miss_look,
                     "update_interval_minutes": int(self.update_interval.total_seconds() // 60) if self.update_interval else None,
+                    "enable_gpa": enable_gpa,
+                    "gpa_scale": gpa_scale,
                 },
             }
             return self.data

@@ -26,6 +26,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         CanvasAnnouncementsSensor(coord, entry),
         CanvasMissingSensor(coord, entry),
         CanvasInfoSensor(coord, entry),
+        CanvasGpaSensor(coord, entry),
     ]
     async_add_entities(entities)
 
@@ -127,4 +128,31 @@ class CanvasInfoSensor(_BaseCanvasSensor):
         out["grades_total"] = data.get("grades_total", 0)
         out["grade_urls_by_course"] = data.get("grade_urls_by_course", {})
         out["options_applied"] = data.get("options_applied", {})
+        out["credits_by_course"] = data.get("credits_by_course", {})
+        out["grade_points_by_course"] = data.get("grade_points_by_course", {})
+        out["gpa"] = data.get("gpa")
+        out["gpa_credits"] = data.get("gpa_credits", 0.0)
+        out["gpa_quality_points"] = data.get("gpa_quality_points", 0.0)
+        return out
+
+class CanvasGpaSensor(_BaseCanvasSensor):
+    def __init__(self, coordinator: CanvasCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "GPA", "mdi:school-outline")
+    @property
+    def native_value(self):
+        g = (self.coordinator.data or {}).get("gpa")
+        try:
+            return round(float(g), 3) if g is not None else None
+        except Exception:
+            return None
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data or {}
+        out = _base_attrs(self._entry)
+        out["gpa"] = data.get("gpa")
+        out["gpa_credits"] = data.get("gpa_credits", 0.0)
+        out["gpa_quality_points"] = data.get("gpa_quality_points", 0.0)
+        out["grade_points_by_course"] = data.get("grade_points_by_course", {})
+        out["credits_by_course"] = data.get("credits_by_course", {})
+        out["course_names_by_id"] = data.get("course_names_by_id", {})
         return out
