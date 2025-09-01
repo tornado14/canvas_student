@@ -16,45 +16,68 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify manifest version matches tag (no bash)
-        id: verify
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const tag = process.env.GITHUB_REF_NAME;  // e.g. v0.6.13
-            const manifestPath = 'custom_components/canvas_student/manifest.json';
-            const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-            core.info(`Tag: ${tag}`);
-            core.info(`Manifest: ${manifest.version}`);
-            const tagNoV = tag.startsWith('v') ? tag.slice(1) : tag;
-            if (manifest.version !== tagNoV) {
-              core.setFailed(`Manifest version (${manifest.version}) does not match tag (${tag})`);
-            }
-            core.setOutput('tag', tag);
-            core.setOutput('manifest', manifest.version);
+      - name: Install jq and zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y jq zip
 
-      - name: Install zip
-        run: sudo apt-get update && sudo apt-get install -y zip
+      - name: Verify manifest version matches tag
+        id: verify
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}  # e.g. v0.6.13
+        run: |
+          set -euo pipefail
+          echo "Tag: ${TAG}"
+
+          if [ ! -f custom_components/canvas_student/manifest.json ]; then
+            echo "::error::custom_components/canvas_student/manifest.json not found"
+            exit 1
+          fi
+
+          MANIFEST_VERSION="$(jq -r '.version' custom_components/canvas_student/manifest.json)"
+          echo "Manifest: ${MANIFEST_VERSION}"
+
+          # Compare: manifest (e.g., 0.6.13) to tag without the leading 'v' (e.g., 0.6.13)
+          if [[ "${MANIFEST_VERSION}" != "${TAG#v}" ]]; then
+            echo "::error::Manifest version (${MANIFEST_VERSION}) does not match tag (${TAG})"
+            exit 1
+          fi
+
+          # Export outputs for later steps (modern way)
+          {
+            echo "tag=${TAG}"
+            echo "manifest=${MANIFEST_VERSION}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build integration zip
+        shell: bash
         env:
           TAG: ${{ steps.verify.outputs.tag }}
         run: |
-          set -e
+          set -euo pipefail
+          if [ ! -d custom_components/canvas_student ]; then
+            echo "::error::custom_components/canvas_student directory not found"
+            exit 1
+          fi
           cd custom_components
           zip -r "../canvas_student_${TAG}.zip" canvas_student
-          ls -lh ..
+          cd ..
+          ls -lh "canvas_student_${TAG}.zip"
 
       - name: Build examples zip (if present)
+        shell: bash
         env:
           TAG: ${{ steps.verify.outputs.tag }}
         run: |
-          set -e
-          if [ -d "examples/cards" ]; then
+          set -euo pipefail
+          if [ -d examples/cards ]; then
             cd examples
             zip -r "../examples_cards_${TAG}.zip" cards
-            ls -lh ..
+            cd ..
+            ls -lh "examples_cards_${TAG}.zip"
           else
             echo "No examples/cards directory found; skipping."
           fi
