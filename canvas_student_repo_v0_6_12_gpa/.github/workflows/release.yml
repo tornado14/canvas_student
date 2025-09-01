@@ -1,0 +1,17 @@
+
+name: build-release
+permissions:
+  contents: write
+on:
+  push:
+    tags:
+      - "v*.*.*"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Zip integration
+        run: |
+          cd custom_components
+          zip -r ../canvas_student_${GITHUB_REF_NAME}.zip canvas_student || true
