@@ -1,41 +1,76 @@
 name: build-release
 permissions:
   contents: write
+
 on:
   push:
     tags:
       - "v*.*.*"
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
-      - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y jq zip
+        with:
+          fetch-depth: 0
+
+      - name: Install jq and zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y jq zip
+
       - name: Verify manifest version matches tag
-        id: version
+        id: verify
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}  # e.g. v0.6.13
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          MANIFEST_VERSION=$(jq -r '.version' custom_components/canvas_student/manifest.json)
-          echo "manifest=${MANIFEST_VERSION}" >> $GITHUB_OUTPUT
-          if [ "${MANIFEST_VERSION}" != "${TAG#v}" ]; then
-            echo "Manifest version (${MANIFEST_VERSION}) does not match tag (${TAG})"
+          set -euo pipefail
+          echo "Tag: ${TAG}"
+          MANIFEST_VERSION="$(jq -r '.version' custom_components/canvas_student/manifest.json)"
+          echo "Manifest: ${MANIFEST_VERSION}"
+
+          # Compare: manifest (e.g. 0.6.13) to tag without leading v (e.g. 0.6.13)
+          if [[ "${MANIFEST_VERSION}" != "${TAG#v}" ]]; then
+            echo "::error::Manifest version (${MANIFEST_VERSION}) does not match tag (${TAG})"
             exit 1
-          }
+          fi
+
+          # Export outputs for later steps
+          {
+            echo "tag=${TAG}"
+            echo "manifest=${MANIFEST_VERSION}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build integration zip
+        shell: bash
         run: |
+          set -euo pipefail
           cd custom_components
-          zip -r ../canvas_student_${{ steps.version.outputs.tag }}.zip canvas_student
+          zip -r "../canvas_student_${GITHUB_REF_NAME}.zip" canvas_student
+
       - name: Build examples zip
-        run: zip -r examples_cards_${{ steps.version.outputs.tag }}.zip examples/cards || true
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d "examples/cards" ]; then
+            cd examples
+            zip -r "../examples_cards_${GITHUB_REF_NAME}.zip" cards
+          else
+            echo "No examples/cards directory found; skipping."
+          fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.tag }}
+          tag_name: ${{ steps.verify.outputs.tag }}
+          name: ${{ steps.verify.outputs.tag }}
           files: |
-            canvas_student_${{ steps.version.outputs.tag }}.zip
-            examples_cards_${{ steps.version.outputs.tag }}.zip
+            canvas_student_${{ steps.verify.outputs.tag }}.zip
+            examples_cards_${{ steps.verify.outputs.tag }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
