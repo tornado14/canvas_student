@@ -82,21 +82,19 @@ class CanvasUngradedCourseSensor(_BaseCanvasSensor):
 
     def __init__(
         self,
-        cordinator: CanvasCoordinator,
+        coordinator: CanvasCoordinator,
         entry: ConfigEntry,
-        course_id str,
+        course_id: str,
         course_name: str,
     ) -> None:
-        # Name suffix includes the course name
         super().__init__(
             coordinator,
             entry,
-            f"Ungraded - {course_name}",
+            f"Awaiting Grading – {course_name}",
             "mdi:clipboard-text-clock",
         )
         self._course_id = course_id
-        # Make unique per course
-        self._attr_unique_id = f"{entry.entry_id}+v2+ungraded_{course_id}"
+        self._attr_unique_id = f"{entry.entry_id}_v2_ungraded_{course_id}"
     @property
     def native_value(self):
         """Number of ungraded submissions for this course."""
