@@ -15,6 +15,10 @@ def _base_attrs(entry: ConfigEntry) -> dict[str, Any]:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coord: CanvasCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     ents = [CanvasCoursesSensor(coord, entry), CanvasGradesSensor(coord, entry), CanvasAssignmentsSensor(coord, entry), CanvasAnnouncementsSensor(coord, entry), CanvasMissingSensor(coord, entry), CanvasInfoSensor(coord, entry), CanvasGpaSensor(coord, entry)]
+    data = coord.data or {}
+    course_names = data.get("course_names_by_id") or {}
+    for cid, cname in course_names.items():
+        ents.append(CanvasUngradedCourseSensor(coord, entry, cid, cname))
     async_add_entities(ents)
 
 class _BaseCanvasSensor(CoordinatorEntity, SensorEntity):
@@ -72,6 +76,60 @@ class CanvasMissingSensor(_BaseCanvasSensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         d = self.coordinator.data or {}; out = _base_attrs(self._entry); missing = d.get("missing_by_course", {}); out["missing_by_course"] = missing; out["missing_total"] = sum(len(v) for v in missing.values()); out["course_names_by_id"] = d.get("course_names_by_id", {}); return out
+
+class CanvasUngradedCourseSensor(_BaseCanvasSensor):
+    """Per-course sensor: submitted-but-ungraded assignments."""
+
+    def __init__(
+        self,
+        cordinator: CanvasCoordinator,
+        entry: ConfigEntry,
+        course_id str,
+        course_name: str,
+    ) -> None:
+        # Name suffix includes the course name
+        super().__init__(
+            coordinator,
+            entry,
+            f"Ungraded - {course_name}",
+            "mdi:clipboard-text-clock",
+        )
+        self._course_id = course_id
+        # Make unique per course
+        self._attr_unique_id = f"{entry.entry_id}+v2+ungraded_{course_id}"
+    @property
+    def native_value(self):
+        """Number of ungraded submissions for this course."""
+        d = self.coordinator.data or {}
+        ungraded_by_course = d.get("ungraded_by_course") or {}
+        items = ungraded_by_course.get(self._course_id) or []
+        return len(items)
+    
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """
+        Attributes include the detailed ungraded list.
+
+        ungraded_assignments = [
+          {
+            "id": ...,
+            "name": ...,
+            "submitted_at": ...,
+            "due_at": ...,
+            "html_url": ...,
+          },
+          ...
+        ]
+        """
+        d = self.coordinator.data or {}
+        out = _base_attrs(self._entry)
+        course_names = d.get("course_names_by_id") or {}
+        ungraded_by_course = d.get("ungraded_by_course") or {}
+
+        out["course_id"] = self._course_id
+        out["course_name"] = course_names.get(self._course_id, self._course_id)
+        out["ungraded_assignments"] = ungraded_by_course.get(self._course_id) or []
+        return out
 
 class CanvasInfoSensor(_BaseCanvasSensor):
     def __init__(self, coordinator: CanvasCoordinator, entry: ConfigEntry) -> None:
