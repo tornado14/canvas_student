@@ -245,7 +245,7 @@ class CanvasCoordinator(DataUpdateCoordinator):
                 "assignments_by_course": upcoming_by_course,
                 "missing_by_course": missing_by_course,
                 "ungraded_by_course": ungraded_by_course,
-		"undated_outstanding_by_course": undated_outstanding_by_course,
+                "undated_outstanding_by_course": undated_outstanding_by_course,
                 "announcements": announcements,
                 "courses_total": len(courses),
                 "grades_total": len(grades_by_course),

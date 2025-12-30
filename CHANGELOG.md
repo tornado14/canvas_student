@@ -1,3 +1,7 @@
+## v0.6.18
+
+- Fixed: Awaiting Grading sensor unavailable in 0.6.17
+
 ## v0.6.17
 
 ### Added
