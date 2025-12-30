@@ -15,18 +15,51 @@ def _base_attrs(entry: ConfigEntry) -> dict[str, Any]:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coord: CanvasCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+
     ents = [
-    CanvasCoursesSensor(coord, entry),
-    CanvasGradesSensor(coord, entry),
-    CanvasAssignmentsSensor(coord, entry),
-    CanvasAnnouncementsSensor(coord, entry),
-    CanvasMissingSensor(coord, entry),
-    CanvasUndatedOutstandingSensor(coord, entry),
-    CanvasInfoSensor(coord, entry),
-    CanvasGpaSensor(coord, entry),
-]
+        CanvasCoursesSensor(coord, entry),
+        CanvasGradesSensor(coord, entry),
+        CanvasAssignmentsSensor(coord, entry),
+        CanvasAnnouncementsSensor(coord, entry),
+        CanvasMissingSensor(coord, entry),
+        CanvasUndatedOutstandingSensor(coord, entry),
+        CanvasInfoSensor(coord, entry),
+        CanvasGpaSensor(coord, entry),
+    ]
+
+    # Create one Awaiting Grading sensor per course
+    d = coord.data or {}
+    course_names = d.get("course_names_by_id") or {}
+    for cid, cname in course_names.items():
+        ents.append(CanvasAwaitingGradingByCourseSensor(coord, entry, str(cid), str(cname)))
 
     async_add_entities(ents)
+
+class CanvasAwaitingGradingByCourseSensor(_BaseCanvasSensor):
+    """One sensor per course. State = count of awaiting grading assignments."""
+    def __init__(self, coordinator: CanvasCoordinator, entry: ConfigEntry, course_id: str, course_name: str) -> None:
+        super().__init__(coordinator, entry, f"Awaiting Grading – {course_name}", "mdi:clipboard-text-clock")
+        self._course_id = str(course_id)
+        self._course_name = course_name
+        self._attr_unique_id = f"{entry.entry_id}_awaiting_grading_{self._course_id}"
+
+    @property
+    def native_value(self):
+        d = self.coordinator.data or {}
+        ungraded_by_course = d.get("ungraded_by_course") or {}
+        items = ungraded_by_course.get(self._course_id) or []
+        return len(items)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        d = self.coordinator.data or {}
+        out = _base_attrs(self._entry)
+        out["course_id"] = self._course_id
+        out["course_name"] = self._course_name
+
+        ungraded_by_course = d.get("ungraded_by_course") or {}
+        out["ungraded_assignments"] = ungraded_by_course.get(self._course_id) or []
+        return out
 
 class CanvasUndatedOutstandingSensor(SensorEntity):
     _attr_icon = "mdi:clipboard-text-outline"

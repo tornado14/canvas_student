@@ -1,3 +1,7 @@
+## v0.6.20
+
+- Restored awaiting grading logic in sensor.py
+
 ## v0.6.19
 
 - Fixed: Awaiting Grading sensor not populating after merge
