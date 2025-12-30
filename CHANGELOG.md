@@ -1,3 +1,9 @@
+## v0.6.21
+
+- Fixed: restore Awaiting Grading per-course entities
+
+- Fixed: sensor module load errors from class order/duplication
+
 ## v0.6.20
 
 - Restored awaiting grading logic in sensor.py
