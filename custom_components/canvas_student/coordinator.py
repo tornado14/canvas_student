@@ -140,6 +140,38 @@ class CanvasCoordinator(DataUpdateCoordinator):
                         pass
                 if miss_list:
                     missing_by_course[cid] = miss_list
+            # submitted-but-ungraded assignments by course (Awaiting Grading)
+            ungraded_by_course = {}
+            for c in courses:
+                cid = str(c["id"])
+                try:
+                    submissions = await self.client.list_submissions_self(
+                        cid,
+                        workflow_state="submitted",
+                    )
+                except Exception:
+                    # Don't let a single course break the whole update
+                    continue
+
+                items = []
+                for sub in submissions:
+                    # Skip submissions that are already graded
+                    if sub.get("graded_at") or sub.get("grade") is not None or sub.get("score") is not None:
+                        continue
+
+                    assignment = sub.get("assignment") or {}
+                    items.append(
+                        {
+                            "id": sub.get("assignment_id"),
+                            "name": assignment.get("name"),
+                            "submitted_at": sub.get("submitted_at"),
+                            "due_at": assignment.get("due_at"),
+                            "html_url": assignment.get("html_url"),
+                        }
+                    )
+
+                if items:
+                    ungraded_by_course[cid] = items
 
             undated_outstanding_by_course = {}
             for c in courses:
@@ -212,7 +244,8 @@ class CanvasCoordinator(DataUpdateCoordinator):
                 "grades_by_course": grades_by_course,
                 "assignments_by_course": upcoming_by_course,
                 "missing_by_course": missing_by_course,
-                "undated_outstanding_by_course": undated_outstanding_by_course,
+                "ungraded_by_course": ungraded_by_course,
+		"undated_outstanding_by_course": undated_outstanding_by_course,
                 "announcements": announcements,
                 "courses_total": len(courses),
                 "grades_total": len(grades_by_course),
