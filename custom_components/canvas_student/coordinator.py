@@ -199,18 +199,24 @@ class CanvasCoordinator(DataUpdateCoordinator):
                     if workflow_state in ("submitted", "graded"):
                         continue
 
+                    due_eff = end_dates_map.get(cid)
+
                     out_list.append(
                         {
                             "id": a.get("id"),
                             "name": a.get("name"),
-                            "due_at": None,
+                            "due_at": due_eff,
                             "html_url": a.get("html_url"),
                         }
                     )
 
                 if out_list:
                     undated_outstanding_by_course[cid] = out_list
-
+                    # Also show these in the normal "assignments_by_course" stream
+                    # so your existing Upcoming Assignments Lovelace card picks them up.
+                    upcoming_by_course.setdefault(cid, [])
+                    existing_ids = {x.get("id") for x in upcoming_by_course[cid]}
+                    upcoming_by_course[cid].extend([x for x in out_list if x.get("id") not in existing_ids])
             context_codes = [f"course_{c['id']}" for c in courses]
             announcements = []
             if context_codes:

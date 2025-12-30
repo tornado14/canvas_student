@@ -1,3 +1,8 @@
+## v0.6.19
+
+- Fixed: Awaiting Grading sensor not populating after merge
+- Fixed: Undated outstanding not shown in assignments list
+
 ## v0.6.18
 
 - Fixed: Awaiting Grading sensor unavailable in 0.6.17
