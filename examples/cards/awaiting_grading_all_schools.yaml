@@ -1,0 +1,39 @@
+type: markdown
+title: Awaiting Grading (All Schools)
+content: |-
+  {%- set ns_global = namespace(shown=0) -%}
+  {%- set fmt = '%b %d, %I:%M %p' -%}
+  {%- set last_school = namespace(name='') -%}
+
+  {%- for s in states.sensor | sort(attribute='entity_id') -%}
+    {%- set eid = s.entity_id -%}
+    {%- set items = state_attr(eid,'ungraded_assignments') -%}
+    {%- if items is not none and (items | count) > 0 -%}
+      {%- set school    = state_attr(eid,'school_name') or 'Canvas' -%}
+      {%- set course    = state_attr(eid,'course_name') or 'Unknown Course' -%}
+      {%- set base      = state_attr(eid,'base_url') or '' -%}
+      {%- set course_id = state_attr(eid,'course_id') -%}
+
+      {%- if school != last_school.name -%}
+  <h3>{{ school }}</h3>
+        {%- set last_school.name = school -%}
+      {%- endif -%}
+
+  <strong>{{ course }}</strong> — {{ items|count }} awaiting grading<br>
+      {%- for a in items -%}
+  • <a href="{{ a.html_url or (base ~ '/courses/' ~ course_id ~ '/assignments/' ~ a.id) }}">{{ a.name }}</a>
+        {%- if a.submitted_at %}
+  — Submitted {{ as_timestamp(as_datetime(a.submitted_at)) | timestamp_custom(fmt, true) }}
+        {%- endif -%}
+        {%- if a.due_at %}
+  — Due {{ as_timestamp(as_datetime(a.due_at)) | timestamp_custom(fmt, true) }}
+        {%- endif %}<br>
+      {%- endfor -%}
+  <br>
+      {%- set ns_global.shown = ns_global.shown + 1 -%}
+    {%- endif -%}
+  {%- endfor -%}
+
+  {%- if ns_global.shown == 0 -%}
+  _No ungraded assignments found._
+  {%- endif -%}
