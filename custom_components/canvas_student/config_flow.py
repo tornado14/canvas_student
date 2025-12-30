@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Any, Dict
+from datetime import datetime
 import json
 import voluptuous as vol
 from homeassistant import config_entries
@@ -11,7 +12,7 @@ from .const import (
     DOMAIN, CONF_BASE_URL, CONF_ACCESS_TOKEN, CONF_SCHOOL_NAME, CONF_STUDENT_NAME,
     OPT_HIDE_EMPTY, OPT_DAYS_AHEAD, OPT_ANN_DAYS, OPT_MISS_LOOKBACK, OPT_UPDATE_MINUTES,
     DEFAULT_HIDE_EMPTY, DEFAULT_DAYS_AHEAD, DEFAULT_ANNOUNCEMENT_DAYS, DEFAULT_MISSING_LOOKBACK, DEFAULT_UPDATE_MINUTES,
-    OPT_ENABLE_GPA, OPT_GPA_SCALE, OPT_CREDITS_MAP, DEFAULT_ENABLE_GPA, DEFAULT_GPA_SCALE,
+    OPT_ENABLE_GPA, OPT_GPA_SCALE, OPT_CREDITS_MAP, OPT_COURSE_END_DATES_MAP, DEFAULT_ENABLE_GPA, DEFAULT_GPA_SCALE,
 )
 from .simple_client import CanvasClient
 
@@ -82,6 +83,13 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
         else:
             credits_default_text = str(credits_default_raw or "{}")
 
+        end_dates_default_raw = cur.get(OPT_COURSE_END_DATES_MAP, {})
+
+        if isinstance(end_dates_default_raw, dict):
+            end_dates_default_text = json.dumps(end_dates_default_raw, indent=2)
+        else:
+            end_dates_default_text = str(end_dates_default_raw or "{}")
+
         def build_schema(dd: Dict[str, Any]):
             return vol.Schema({
                 vol.Optional(OPT_HIDE_EMPTY, default=dd.get(OPT_HIDE_EMPTY, hide_default)): bool,
@@ -93,6 +101,7 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
                 vol.Optional(OPT_GPA_SCALE, default=dd.get(OPT_GPA_SCALE, gpa_scale_default)): vol.In(["us_4_0_plusminus","simple_cutoffs"]),
                 # Keep JSON fallback for power users; the credits form is in a separate step.
                 vol.Optional(OPT_CREDITS_MAP, default=dd.get(OPT_CREDITS_MAP, credits_default_text)): str,
+                vol.Optional(OPT_COURSE_END_DATES_MAP, default=dd.get(OPT_COURSE_END_DATES_MAP, end_dates_default_text)): str,
                 vol.Optional(CONF_ACCESS_TOKEN, default=dd.get(CONF_ACCESS_TOKEN, "")): str,
                 vol.Required(ACTION, default=dd.get(ACTION, ACT_SAVE)): vol.In([ACT_SAVE, ACT_VALIDATE, ACT_EDIT_CREDITS]),
             })
@@ -119,6 +128,32 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
                     credits_norm = {str(k): float(v) for (k, v) in obj.items()}
                 except Exception:
                     errors[OPT_CREDITS_MAP] = "invalid_json"
+                    return self.async_show_form(
+                        step_id="init",
+                        data_schema=build_schema(user_input),
+                        errors=errors,
+                        description_placeholders={"last_result": self._last_result},
+                    )
+
+            # JSON course end-dates fallback parsing (only if Save pressed here)
+            end_dates_norm = None
+            if action == ACT_SAVE:
+                end_dates_raw = user_input.get(OPT_COURSE_END_DATES_MAP, "").strip() or "{}"
+                try:
+                    obj = json.loads(end_dates_raw)
+                    if not isinstance(obj, dict):
+                        raise ValueError("course_end_dates_by_course must be a JSON object")
+                    end_dates_norm = {}
+                    for k, v in obj.items():
+                        cid = str(k)
+                        ds = str(v).strip()
+                        if not ds:
+                            continue
+                        # Expect YYYY-MM-DD
+                        datetime.strptime(ds, "%Y-%m-%d")
+                        end_dates_norm[cid] = ds
+                except Exception:
+                    errors[OPT_COURSE_END_DATES_MAP] = "invalid_json"
                     return self.async_show_form(
                         step_id="init",
                         data_schema=build_schema(user_input),
@@ -169,6 +204,8 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
             })
             if credits_norm is not None:
                 new_opts[OPT_CREDITS_MAP] = credits_norm
+            if end_dates_norm is not None:
+                new_opts[OPT_COURSE_END_DATES_MAP] = end_dates_norm
             if token:
                 new_data = dict(self.config_entry.data)
                 new_data[CONF_ACCESS_TOKEN] = token

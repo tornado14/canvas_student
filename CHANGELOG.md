@@ -1,2 +1,12 @@
+## v0.6.17
+
+### Added
+- Support for per-course end dates for assignments without due dates.
+- Undated assignments now use the configured course end date as an effective due date.
+
+### Notes
+- This is especially useful for independent study courses that do not define assignment due dates.
+- No new sensors or Lovelace changes are required.
+
 ## 0.6.13
 - Bundle full working Markdown cards in `examples/cards/`

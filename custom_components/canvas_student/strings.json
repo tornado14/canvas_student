@@ -27,6 +27,7 @@
           "enable_gpa": "Enable GPA",
           "gpa_scale": "GPA scale",
           "credits_by_course": "Credits mapping (JSON, optional)",
+          "course_end_dates_by_course": "Course end dates mapping (JSON, optional)",
           "access_token": "Access Token (optional)",
           "action": "Action"
         }
@@ -35,7 +36,9 @@
         "title": "Edit course credits",
         "description": "Set credits per active course. Leave 0 to ignore."
       }
+    },
+    "error": {
+      "invalid_json": "Invalid JSON."
     }
   }
 }
-

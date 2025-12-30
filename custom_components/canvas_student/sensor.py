@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Any
 from homeassistant.components.sensor import SensorEntity
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -14,9 +15,64 @@ def _base_attrs(entry: ConfigEntry) -> dict[str, Any]:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coord: CanvasCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    ents = [CanvasCoursesSensor(coord, entry), CanvasGradesSensor(coord, entry), CanvasAssignmentsSensor(coord, entry), CanvasAnnouncementsSensor(coord, entry), CanvasMissingSensor(coord, entry), CanvasInfoSensor(coord, entry), CanvasGpaSensor(coord, entry)]
+    ents = [
+    CanvasCoursesSensor(coord, entry),
+    CanvasGradesSensor(coord, entry),
+    CanvasAssignmentsSensor(coord, entry),
+    CanvasAnnouncementsSensor(coord, entry),
+    CanvasMissingSensor(coord, entry),
+    CanvasUndatedOutstandingSensor(coord, entry),
+    CanvasInfoSensor(coord, entry),
+    CanvasGpaSensor(coord, entry),
+]
+
     async_add_entities(ents)
 
+class CanvasUndatedOutstandingSensor(SensorEntity):
+    _attr_icon = "mdi:clipboard-text-outline"
+
+    def __init__(self, coordinator, entry):
+        self.coordinator = coordinator
+        self.entry = entry
+
+        # "Per course" but this is a single sensor that exposes counts per course
+        # via attributes. If you truly want ONE ENTITY PER COURSE, tell me and
+        # we’ll generate entities dynamically from course IDs instead.
+        self._attr_name = "Canvas Undated Outstanding (by course)"
+        self._attr_unique_id = f"{entry.entry_id}_undated_outstanding_by_course"
+
+    @property
+    def native_value(self):
+        data = self.coordinator.data or {}
+        by_course = data.get("undated_outstanding_by_course", {})
+        # total across all courses; still “per course” details are in attributes
+        return sum(len(v) for v in by_course.values())
+
+    @property
+    def extra_state_attributes(self):
+        data = self.coordinator.data or {}
+        course_names = data.get("course_names_by_id", {})
+        by_course = data.get("undated_outstanding_by_course", {})
+
+        # Attributes: per-course list + per-course count
+        details = {}
+        counts = {}
+        for cid, items in by_course.items():
+            cname = course_names.get(str(cid), str(cid))
+            counts[cname] = len(items)
+            details[cname] = items
+
+        return {
+            "counts_by_course": counts,
+            "outstanding_undated_by_course": details,
+        }
+
+    async def async_added_to_hass(self):
+        self.coordinator.async_add_listener(self.async_write_ha_state)
+
+    async def async_will_remove_from_hass(self):
+        self.coordinator.async_remove_listener(self.async_write_ha_state)
+        
 class _BaseCanvasSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator: CanvasCoordinator, entry: ConfigEntry, name_suffix: str, icon: str) -> None:
         super().__init__(coordinator)

@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 import logging
-from datetime import timedelta, datetime, timezone
+from datetime import timedelta, datetime, timezone, time
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -55,6 +55,21 @@ class CanvasCoordinator(DataUpdateCoordinator):
             enable_gpa  = bool(self.entry.options.get(OPT_ENABLE_GPA, DEFAULT_ENABLE_GPA))
             gpa_scale   = self.entry.options.get(OPT_GPA_SCALE, DEFAULT_GPA_SCALE)
             credits_map = {str(k): float(v) for (k, v) in (self.entry.options.get(OPT_CREDITS_MAP, {}) or {}).items() if v is not None}
+            end_dates_raw = (self.entry.options.get(OPT_COURSE_END_DATES_MAP, {}) or {})
+            end_dates_map: dict[str, str] = {}
+            if isinstance(end_dates_raw, dict):
+                for k, v in end_dates_raw.items():
+                    cid_k = str(k)
+                    ds = str(v).strip()
+                    if not ds:
+                        continue
+                    try:
+                        d = datetime.strptime(ds, "%Y-%m-%d").date()
+                        local_dt = datetime.combine(d, time(23, 59, 59), tzinfo=dt_util.DEFAULT_TIME_ZONE)
+                        end_dates_map[cid_k] = local_dt.astimezone(timezone.utc).isoformat()
+                    except Exception:
+                        pass
+
 
             now = datetime.now(timezone.utc)
             horizon = now + timedelta(days=days_ahead)
@@ -85,11 +100,17 @@ class CanvasCoordinator(DataUpdateCoordinator):
                 trimmed = []
                 for a in items:
                     due = a.get("due_at")
+                    if not due:
+                        # Apply per-course end date as effective due date when Canvas has no due date
+                        due = end_dates_map.get(cid)
+                        if due:
+                            a = dict(a)
+                            a["due_source"] = "course_end"
                     if due:
                         dt = dt_util.parse_datetime(due)
                         if dt is not None and dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)
                         if dt and dt <= horizon:
-                            trimmed.append({"id": a.get("id"), "name": a.get("name"), "due_at": a.get("due_at"), "html_url": a.get("html_url")})
+                            trimmed.append({"id": a.get("id"), "name": a.get("name"), "due_at": due, "html_url": a.get("html_url"), "due_source": a.get("due_source")})
                     else:
                         trimmed.append({"id": a.get("id"), "name": a.get("name"), "due_at": None, "html_url": a.get("html_url")})
                 upcoming_by_course[cid] = trimmed
@@ -101,6 +122,12 @@ class CanvasCoordinator(DataUpdateCoordinator):
                 miss_list = []
                 for a in assignments:
                     due = a.get("due_at")
+                    if not due:
+                        # Apply per-course end date as effective due date when Canvas has no due date
+                        due = end_dates_map.get(cid)
+                        if due:
+                            a = dict(a)
+                            a["due_source"] = "course_end"
                     if due:
                         dt = dt_util.parse_datetime(due)
                         if dt is not None and dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)
@@ -113,6 +140,44 @@ class CanvasCoordinator(DataUpdateCoordinator):
                         pass
                 if miss_list:
                     missing_by_course[cid] = miss_list
+
+            undated_outstanding_by_course = {}
+            for c in courses:
+                cid = str(c["id"])
+                assignments = await self.client.list_assignments(cid, bucket=None)
+
+                out_list = []
+                for a in assignments:
+                    # Only consider assignments with no due date
+                    if a.get("due_at"):
+                        continue
+
+                    try:
+                        sub = await self.client.get_submission_self(cid, a.get("id"))
+                    except Exception:
+                        sub = None
+
+                    # Your definition: outstanding = no submission.
+                    # Canvas often signals submission via submitted_at and/or workflow_state.
+                    submitted_at = (sub or {}).get("submitted_at")
+                    workflow_state = (sub or {}).get("workflow_state")
+
+                    if submitted_at:
+                        continue
+                    if workflow_state in ("submitted", "graded"):
+                        continue
+
+                    out_list.append(
+                        {
+                            "id": a.get("id"),
+                            "name": a.get("name"),
+                            "due_at": None,
+                            "html_url": a.get("html_url"),
+                        }
+                    )
+
+                if out_list:
+                    undated_outstanding_by_course[cid] = out_list
 
             context_codes = [f"course_{c['id']}" for c in courses]
             announcements = []
@@ -147,6 +212,7 @@ class CanvasCoordinator(DataUpdateCoordinator):
                 "grades_by_course": grades_by_course,
                 "assignments_by_course": upcoming_by_course,
                 "missing_by_course": missing_by_course,
+                "undated_outstanding_by_course": undated_outstanding_by_course,
                 "announcements": announcements,
                 "courses_total": len(courses),
                 "grades_total": len(grades_by_course),
