@@ -29,16 +29,34 @@
           "credits_by_course": "Credits mapping (JSON, optional)",
           "course_end_dates_by_course": "Course end dates mapping (JSON, optional)",
           "access_token": "Access Token (optional)",
-          "action": "Action"
+          "action": "Action",
+          "hide_courses": "Hide courses (multi-select)",
+          "credits_map_text": "Credits mapping (JSON)"
         }
       },
       "credits": {
         "title": "Edit course credits",
         "description": "Set credits per active course. Leave 0 to ignore."
+      },
+      "enddate_add": {
+        "title": "Add / update course end date",
+        "description": "Pick a course and set its end date (YYYY-MM-DD). This is used as an effective due date for undated assignments.",
+        "data": {
+          "course_key": "Course",
+          "end_date": "End date (YYYY-MM-DD)"
+        }
+      },
+      "enddate_remove": {
+        "title": "Remove course end date",
+        "description": "Pick a course to remove its configured end date.",
+        "data": {
+          "course_key": "Course"
+        }
       }
     },
     "error": {
-      "invalid_json": "Invalid JSON."
+      "invalid_json": "Invalid JSON.",
+      "invalid_date": "Invalid date. Use YYYY-MM-DD."
     }
   }
 }

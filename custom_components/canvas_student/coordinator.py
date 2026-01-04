@@ -55,7 +55,9 @@ class CanvasCoordinator(DataUpdateCoordinator):
             enable_gpa  = bool(self.entry.options.get(OPT_ENABLE_GPA, DEFAULT_ENABLE_GPA))
             gpa_scale   = self.entry.options.get(OPT_GPA_SCALE, DEFAULT_GPA_SCALE)
             credits_map = {str(k): float(v) for (k, v) in (self.entry.options.get(OPT_CREDITS_MAP, {}) or {}).items() if v is not None}
-            end_dates_raw = (self.entry.options.get(OPT_COURSE_END_DATES_MAP, {}) or {})
+            hide_courses_raw = (self.entry.options.get(OPT_HIDE_COURSES, []) or [])
+            hide_courses = {str(x) for x in hide_courses_raw} if isinstance(hide_courses_raw, list) else set()
+            end_dates_raw = (self.entry.options.get(OPT_COURSE_END_DATES_MAP, OPT_HIDE_COURSES, {}) or {})
             end_dates_map: dict[str, str] = {}
             if isinstance(end_dates_raw, dict):
                 for k, v in end_dates_raw.items():
@@ -78,6 +80,9 @@ class CanvasCoordinator(DataUpdateCoordinator):
             missing_cutoff = now - timedelta(days=miss_look)
 
             courses = await self.client.list_courses()
+            if hide_courses:
+                courses = [c for c in courses if str(c.get('id')) not in hide_courses]
+
             course_names = {str(c["id"]): c.get("name") or c.get("course_code") or str(c["id"]) for c in courses}
             grade_urls = {str(c["id"]): f"{base_url}/courses/{c['id']}/grades" for c in courses}
 
@@ -140,38 +145,6 @@ class CanvasCoordinator(DataUpdateCoordinator):
                         pass
                 if miss_list:
                     missing_by_course[cid] = miss_list
-            # submitted-but-ungraded assignments by course (Awaiting Grading)
-            ungraded_by_course = {}
-            for c in courses:
-                cid = str(c["id"])
-                try:
-                    submissions = await self.client.list_submissions_self(
-                        cid,
-                        workflow_state="submitted",
-                    )
-                except Exception:
-                    # Don't let a single course break the whole update
-                    continue
-
-                items = []
-                for sub in submissions:
-                    # Skip submissions that are already graded
-                    if sub.get("graded_at") or sub.get("grade") is not None or sub.get("score") is not None:
-                        continue
-
-                    assignment = sub.get("assignment") or {}
-                    items.append(
-                        {
-                            "id": sub.get("assignment_id"),
-                            "name": assignment.get("name"),
-                            "submitted_at": sub.get("submitted_at"),
-                            "due_at": assignment.get("due_at"),
-                            "html_url": assignment.get("html_url"),
-                        }
-                    )
-
-                if items:
-                    ungraded_by_course[cid] = items
 
             undated_outstanding_by_course = {}
             for c in courses:
@@ -199,24 +172,18 @@ class CanvasCoordinator(DataUpdateCoordinator):
                     if workflow_state in ("submitted", "graded"):
                         continue
 
-                    due_eff = end_dates_map.get(cid)
-
                     out_list.append(
                         {
                             "id": a.get("id"),
                             "name": a.get("name"),
-                            "due_at": due_eff,
+                            "due_at": None,
                             "html_url": a.get("html_url"),
                         }
                     )
 
                 if out_list:
                     undated_outstanding_by_course[cid] = out_list
-                    # Also show these in the normal "assignments_by_course" stream
-                    # so your existing Upcoming Assignments Lovelace card picks them up.
-                    upcoming_by_course.setdefault(cid, [])
-                    existing_ids = {x.get("id") for x in upcoming_by_course[cid]}
-                    upcoming_by_course[cid].extend([x for x in out_list if x.get("id") not in existing_ids])
+
             context_codes = [f"course_{c['id']}" for c in courses]
             announcements = []
             if context_codes:
@@ -250,7 +217,6 @@ class CanvasCoordinator(DataUpdateCoordinator):
                 "grades_by_course": grades_by_course,
                 "assignments_by_course": upcoming_by_course,
                 "missing_by_course": missing_by_course,
-                "ungraded_by_course": ungraded_by_course,
                 "undated_outstanding_by_course": undated_outstanding_by_course,
                 "announcements": announcements,
                 "courses_total": len(courses),

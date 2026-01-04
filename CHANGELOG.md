@@ -1,3 +1,8 @@
+## 0.6.22
+- Add course hide-list option (multi-select) to filter out non-course “courses” across sensors and Lovelace output.
+- Improve independent study handling by supporting per-course end dates for undated assignments (effective due date) and labeling with `due_source`.
+- Internal cleanup: apply course filtering consistently in coordinator + per-course sensors.
+
 ## v0.6.21
 
 - Fixed: restore Awaiting Grading per-course entities

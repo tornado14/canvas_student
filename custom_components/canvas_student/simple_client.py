@@ -51,31 +51,6 @@ class CanvasClient:
         if bucket: params["bucket"] = bucket
         return await self._get_all_pages(PATH_ASSIGNMENTS.format(course_id=course_id), params)
 
-# NEW: list submissions for the current user in a course
-    async def list_submissions_self(
-        self,
-        course_id: str,
-        workflow_state: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """
-        Returns submissions for the current user in a course.
-
-        Each item is the raw Canvas submission dict, optionally with `assignment`
-        included if Canvas provides it.
-        """
-        params: Dict[str, Any] = {
-            "student_ids[]": "self",
-            "include[]": ["assignment"],
-            "per_page": 50,
-        }
-        if workflow_state:
-            params["workflow_state"] = workflow_state
-
-        return await self._get_all_pages(
-            PATH_STUDENT_SUBMISSIONS_SELF.format(course_id=course_id),
-            params,
-        )
-
     async def get_submission_self(self, course_id: str, assignment_id: str) -> Dict[str, Any]:
         url = URL(self._base + PATH_SUBMISSIONS_SELF.format(course_id=course_id, assignment_id=assignment_id))
         async with self._session.get(url, headers=self._headers) as resp:
