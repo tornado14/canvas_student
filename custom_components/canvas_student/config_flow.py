@@ -180,6 +180,8 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
             "save": "Save options",
             "enddate_add": "Add / update a course end date",
             "enddate_remove": "Remove a course end date",
+            "credits_add": "Add / update course credits",
+            "credits_remove": "Remove course credits",
         }
 
         if user_input is not None:
@@ -239,6 +241,11 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
                 return await self.async_step_enddate_add()
             if action == "enddate_remove":
                 return await self.async_step_enddate_remove()
+            if action == "credits_add":
+                return await self.async_step_credits_add()
+            if action == "credits_remove":
+                return await self.async_step_credits_remove()
+
 
             return self.async_create_entry(title="", data=new_opts)
 
@@ -359,6 +366,87 @@ class CanvasStudentOptionsFlow(config_entries.OptionsFlowWithConfigEntry):
             }
         )
         return self.async_show_form(step_id="enddate_remove", data_schema=schema, errors=errors)
+
+    async def async_step_credits_add(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        await self._ensure_courses_loaded()
+        cur = self.config_entry.options or {}
+
+        credits_map = cur.get(OPT_CREDITS_MAP, {})
+        if not isinstance(credits_map, dict):
+            credits_map = {}
+
+        errors: Dict[str, str] = {}
+        course_keys = sorted(self._key_to_cid.keys(), key=lambda s: s.lower())
+
+        if user_input is not None:
+            key = user_input.get("course_key")
+            credits_raw = (user_input.get("credits") or "").strip()
+            try:
+                cid = self._key_to_cid.get(key)
+                if not cid:
+                    raise ValueError("bad course")
+
+                # allow "3" or "3.0"
+                credits_val = float(credits_raw)
+                if credits_val <= 0:
+                    raise ValueError("credits must be positive")
+
+                credits_map = dict(credits_map)
+                credits_map[str(cid)] = credits_val
+
+                new_opts = dict(cur)
+                new_opts[OPT_CREDITS_MAP] = credits_map
+                return self.async_create_entry(title="", data=new_opts)
+            except Exception:
+                errors["credits"] = "invalid_credits"
+
+        schema = vol.Schema(
+            {
+                vol.Required("course_key"): SelectSelector(
+                    SelectSelectorConfig(options=course_keys, mode=SelectSelectorMode.DROPDOWN)
+                ),
+                vol.Required("credits"): str,
+            }
+        )
+        return self.async_show_form(step_id="credits_add", data_schema=schema, errors=errors)
+
+    async def async_step_credits_remove(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+        await self._ensure_courses_loaded()
+        cur = self.config_entry.options or {}
+
+        credits_map = cur.get(OPT_CREDITS_MAP, {})
+        if not isinstance(credits_map, dict):
+            credits_map = {}
+
+        # only courses that currently have credits
+        keyed = []
+        for cid in sorted(credits_map.keys(), key=lambda x: int(x) if str(x).isdigit() else str(x)):
+            k = self._cid_to_key(str(cid))
+            if k:
+                keyed.append(k)
+
+        if user_input is not None:
+            key = user_input.get("course_key")
+            cid = self._key_to_cid.get(key)
+            if cid and str(cid) in credits_map:
+                credits_map = dict(credits_map)
+                credits_map.pop(str(cid), None)
+
+            new_opts = dict(cur)
+            new_opts[OPT_CREDITS_MAP] = credits_map
+            return self.async_create_entry(title="", data=new_opts)
+
+        schema = vol.Schema(
+            {
+                vol.Required("course_key"): SelectSelector(
+                    SelectSelectorConfig(
+                        options=keyed or course_keys_fallback(self._key_to_cid),
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(step_id="credits_remove", data_schema=schema, errors={})
 
 
 def course_keys_fallback(key_to_cid: dict[str, str]) -> list[str]:
