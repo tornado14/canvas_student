@@ -1,3 +1,6 @@
+## 0.6.23
+- Fix syntax/logic around upcoming assignment filtering and Option B undated handling.
+
 ## 0.6.22
 - Add course hide-list option (multi-select) to filter out non-course “courses” across sensors and Lovelace output.
 - Improve independent study handling by supporting per-course end dates for undated assignments (effective due date) and labeling with `due_source`.
