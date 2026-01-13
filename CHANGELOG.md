@@ -1,3 +1,6 @@
+## 0.6.24
+- Fix upcoming filter: exclude past-due items
+
 ## 0.6.23
 - Fix syntax/logic around upcoming assignment filtering and Option B undated handling.
 

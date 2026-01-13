@@ -225,6 +225,14 @@ class CanvasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if not isinstance(items, list):
                         items = []
 
+                _LOGGER.warning("Canvas %s %s using upcoming=%s got %d items",
+                    self.entry.data.get("school_name"),
+                    cid,
+                    used_upcoming_bucket,
+                    len(items),
+                )
+
+
                 trimmed: list[dict[str, Any]] = []
 
                 for a in items:
@@ -256,7 +264,7 @@ class CanvasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if dt is not None and dt.tzinfo is None:
                         dt = dt.replace(tzinfo=timezone.utc)
 
-                    if dt and dt <= horizon:
+                    if dt and now <= dt <= horizon:
                         trimmed.append(
                             {
                                 "id": a.get("id"),
