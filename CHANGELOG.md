@@ -1,3 +1,6 @@
+## 0.6.25
+- Added diagnostics.py for in UI diagnostics collection
+
 ## 0.6.24
 - Fix upcoming filter: exclude past-due items
 
