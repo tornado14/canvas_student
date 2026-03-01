@@ -1,4 +1,13 @@
-## 0.6.25
+# Changelog
+
+## [0.6.26] - 2026-03-01
+### Fixed
+- Prevented CanvasCoordinator crash when `school_name` attribute was missing
+- Improved coordinator initialization stability
+- Ensured UpdateFailed uses safe school name fallback
+
+### Changed
+- Standardized coordinator logging to include school name## 0.6.25
 - Added diagnostics.py for in UI diagnostics collection
 
 ## 0.6.24

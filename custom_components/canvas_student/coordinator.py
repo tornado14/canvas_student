@@ -18,7 +18,6 @@ from .const import (
     DEFAULT_HIDE_EMPTY,
     DEFAULT_MISSING_LOOKBACK,
     DEFAULT_UPDATE_MINUTES,
-    DOMAIN,
     OPT_ANN_DAYS,
     OPT_COURSE_END_DATES_MAP,
     OPT_CREDITS_MAP,
@@ -77,16 +76,29 @@ def _grade_points(letter: str) -> float | None:
 
 
 class CanvasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator for Canvas Student integration."""
+
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, client: CanvasClient) -> None:
         self.hass = hass
         self.entry = entry
         self.client = client
 
+        # IMPORTANT:
+        # Other parts of the integration may reference coordinator.school_name.
+        # Define it once here with safe fallbacks so it always exists.
+        self.school_name: str = (
+            str(entry.data.get("school_name") or "").strip()
+            or str(entry.options.get("school_name") or "").strip()
+            or str(entry.title or "").strip()
+            or "School"
+        )
+
         update_minutes = int(entry.options.get(OPT_UPDATE_MINUTES, DEFAULT_UPDATE_MINUTES))
+
         super().__init__(
             hass,
             _LOGGER,
-            name=f"Canvas ({entry.data.get('school_name', 'School')})",
+            name=f"Canvas ({self.school_name})",
             update_interval=timedelta(minutes=update_minutes),
         )
 
@@ -98,8 +110,6 @@ class CanvasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             days_ahead = int(self.entry.options.get(OPT_DAYS_AHEAD, DEFAULT_DAYS_AHEAD))
             ann_days = int(self.entry.options.get(OPT_ANN_DAYS, DEFAULT_ANNOUNCEMENT_DAYS))
             miss_lookback_days = int(self.entry.options.get(OPT_MISS_LOOKBACK, DEFAULT_MISSING_LOOKBACK))
-            now = datetime.now(timezone.utc)
-            horizon = now + timedelta(days=days_ahead)
 
             enable_gpa = bool(self.entry.options.get(OPT_ENABLE_GPA, DEFAULT_ENABLE_GPA))
             gpa_scale_raw = self.entry.options.get(OPT_GPA_SCALE, DEFAULT_GPA_SCALE)
@@ -225,13 +235,13 @@ class CanvasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if not isinstance(items, list):
                         items = []
 
-                _LOGGER.warning("Canvas %s %s using upcoming=%s got %d items",
-                    self.entry.data.get("school_name"),
+                _LOGGER.debug(
+                    "Canvas %s %s using upcoming=%s got %d items",
+                    self.school_name,
                     cid,
                     used_upcoming_bucket,
                     len(items),
                 )
-
 
                 trimmed: list[dict[str, Any]] = []
 
@@ -247,7 +257,7 @@ class CanvasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             due_source = "course_end"
 
                     if not due:
-                        # Option B: include undated items ONLY when they came from the upcoming bucket.
+                        # Include undated items ONLY when they came from the upcoming bucket.
                         # If we had to fall back to "all", including undated floods the list.
                         if used_upcoming_bucket:
                             trimmed.append(
@@ -275,13 +285,9 @@ class CanvasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             }
                         )
 
-
-                # Optional: hide-empty at course-level? (we keep empty lists and let UI decide)
                 assignments_by_course[cid] = trimmed
 
             # --- Missing Assignments ---
-            # Definition here: due date exists and is in [miss_floor, now], and user has no submission.
-            # (This can be expensive if Canvas requires per-assignment submission calls; we keep it guarded.)
             missing_by_course: dict[str, list[dict[str, Any]]] = {}
 
             for c in courses:
@@ -380,7 +386,6 @@ class CanvasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     ungraded_by_course[cid] = items
 
             # --- Undated outstanding by course (no due date, not submitted) ---
-            # NOTE: this can be expensive; keep it lightweight and guarded.
             undated_outstanding_by_course: dict[str, list[dict[str, Any]]] = {}
 
             for c in courses:
@@ -526,4 +531,5 @@ class CanvasCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             }
 
         except Exception as err:
-            raise UpdateFailed(f"Canvas update failed: {err}") from err
+            # Use coordinator's school_name for more helpful diagnostics (and ensure it always exists).
+            raise UpdateFailed(f"{self.school_name} update failed: {err}") from err
